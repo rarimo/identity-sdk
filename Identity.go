@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strconv"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -26,6 +27,8 @@ import (
 	verifiable "github.com/rarimo/go-schema-processor/verifiable"
 	"golang.org/x/crypto/sha3"
 )
+
+var OperationFinalizedStatus = "SIGNED"
 
 type TreeState struct {
 	State           *merkletree.Hash
@@ -214,26 +217,6 @@ func (i *Identity) GetNullifierHex() string {
 	return i.nullifier.Text(16)
 }
 
-func (i *Identity) GetVCsJSON() ([]byte, error) {
-	jsonData, err := json.Marshal(i.credentials)
-	if err != nil {
-		return nil, fmt.Errorf("error marshaling credentials: %v", err)
-	}
-
-	return jsonData, nil
-}
-
-func (i *Identity) SetVCsJSON(vcJSON []byte) error {
-	credentials := []*verifiable.W3CCredential{}
-	if err := json.Unmarshal(vcJSON, &credentials); err != nil {
-		return fmt.Errorf("error unmarshaling credentials: %v", err)
-	}
-
-	i.credentials = credentials
-
-	return nil
-}
-
 func (i *Identity) InitVerifiableCredentials(offerData []byte) error {
 	offer := new(ClaimOfferResponse)
 	if err := json.Unmarshal(offerData, &offer); err != nil {
@@ -321,7 +304,38 @@ func (i *Identity) InitVerifiableCredentials(offerData []byte) error {
 	return nil
 }
 
-func (i *Identity) DIDToIDHex(did string) (string, error) {
+func (i *Identity) IsFinalized(
+	rarimoCoreURL string,
+	issuerDid string,
+	creationTimestamp int64,
+) (bool, error) {
+	coreStateInfo, err := i.getStateInfo(rarimoCoreURL, issuerDid)
+	if err != nil {
+		return false, fmt.Errorf("error getting state info: %v", err)
+	}
+
+	coreOperation, err := i.getCoreOperation(rarimoCoreURL, coreStateInfo.LastUpdateOperationIdx)
+	if err != nil {
+		return false, fmt.Errorf("error getting core operation: %v", err)
+	}
+
+	timestamp, err := strconv.ParseInt(coreOperation.Timestamp, 10, 64)
+	if err != nil {
+		return false, fmt.Errorf("timestamp is not valid integer: %v", err)
+	}
+
+	if creationTimestamp > timestamp {
+		return false, nil
+	}
+
+	if coreOperation.Status != OperationFinalizedStatus {
+		return false, nil
+	}
+
+	return true, nil
+}
+
+func (i *Identity) didToIDHex(did string) (string, error) {
 	didParsed, err := w3c.ParseDID(did)
 	if err != nil {
 		return "", fmt.Errorf("error parsing did: %v", err)
@@ -397,6 +411,15 @@ func (i *Identity) prepareQueryInputs(
 	documentNullifierBigInt, ok := new(big.Int).SetString(documentNullifier, 10)
 	if !ok {
 		return nil, nil, errors.New("error setting document nullifier")
+	}
+
+	isUserRegistered, err := i.stateProvider.IsUserRegistered(votingAddress, documentNullifierBigInt.Bytes())
+	if err != nil {
+		return nil, nil, errors.New("errors getting is user registered")
+	}
+
+	if isUserRegistered {
+		return nil, nil, errors.New("user already registered")
 	}
 
 	createProofRequest := &CreateProofRequest{
@@ -880,7 +903,7 @@ func (i *Identity) getCoreOperation(rarimoCoreURL string, index string) (*Operat
 }
 
 func (i *Identity) getCoreMTP(rarimoCoreURL string, issuerDid string, createdAtBlock string) (*CoreMTP, error) {
-	issuerIdHex, err := i.DIDToIDHex(issuerDid)
+	issuerIdHex, err := i.didToIDHex(issuerDid)
 	if err != nil {
 		return nil, fmt.Errorf("error converting issuer did to id hex: %v", err)
 	}
@@ -901,7 +924,7 @@ func (i *Identity) getCoreMTP(rarimoCoreURL string, issuerDid string, createdAtB
 }
 
 func (i *Identity) getStateInfo(rarimoCoreURL string, issuerDid string) (*StateInfo, error) {
-	issuerIdHex, err := i.DIDToIDHex(issuerDid)
+	issuerIdHex, err := i.didToIDHex(issuerDid)
 	if err != nil {
 		return nil, fmt.Errorf("error converting issuer did to id hex: %v", err)
 	}

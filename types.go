@@ -134,6 +134,7 @@ type StateProvider interface {
 	Fetch(url string, method string, body []byte, headerKey string, headerValue string) ([]byte, error)
 	LocalPrinter(msg string)
 	ProveCredentialAtomicQueryMTPV2OnChainVoting(inputs []byte) ([]byte, error)
+	IsUserRegistered(contract string, documentNullifier []byte) (bool, error)
 }
 
 type CredentialStatus struct {
