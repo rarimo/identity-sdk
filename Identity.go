@@ -9,10 +9,10 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strconv"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
-	"github.com/ethereum/go-ethereum/crypto"
 	circuits "github.com/iden3/go-circuits/v2"
 	core "github.com/iden3/go-iden3-core/v2"
 	"github.com/iden3/go-iden3-core/v2/w3c"
@@ -27,6 +27,8 @@ import (
 	verifiable "github.com/rarimo/go-schema-processor/verifiable"
 	"golang.org/x/crypto/sha3"
 )
+
+var OperationFinalizedStatus = "SIGNED"
 
 type TreeState struct {
 	State           *merkletree.Hash
@@ -47,15 +49,6 @@ type Identity struct {
 	nullifier                 *big.Int
 	secret                    *big.Int
 	commitment                *big.Int
-}
-
-func CheckConversible() {
-	a, ok := new(big.Int).SetString("e8f4acc50595fe211b042bd1a6b78679e23456b99d5e9edc937e679440ea297", 16)
-	if !ok {
-		fmt.Println("error setting a")
-	}
-
-	print(a.Text(16))
 }
 
 func NewIdentityWithData(
@@ -224,26 +217,6 @@ func (i *Identity) GetNullifierHex() string {
 	return i.nullifier.Text(16)
 }
 
-func (i *Identity) GetVCsJSON() ([]byte, error) {
-	jsonData, err := json.Marshal(i.credentials)
-	if err != nil {
-		return nil, fmt.Errorf("error marshaling credentials: %v", err)
-	}
-
-	return jsonData, nil
-}
-
-func (i *Identity) SetVCsJSON(vcJSON []byte) error {
-	credentials := []*verifiable.W3CCredential{}
-	if err := json.Unmarshal(vcJSON, &credentials); err != nil {
-		return fmt.Errorf("error unmarshaling credentials: %v", err)
-	}
-
-	i.credentials = credentials
-
-	return nil
-}
-
 func (i *Identity) InitVerifiableCredentials(offerData []byte) error {
 	offer := new(ClaimOfferResponse)
 	if err := json.Unmarshal(offerData, &offer); err != nil {
@@ -313,7 +286,7 @@ func (i *Identity) InitVerifiableCredentials(offerData []byte) error {
 			return fmt.Errorf("error serializing token: %v", err)
 		}
 
-		response, err := i.stateProvider.Fetch(offer.Body.Url, "POST", jwzToken)
+		response, err := i.stateProvider.Fetch(offer.Body.Url, "POST", []byte(jwzToken), "", "")
 		if err != nil {
 			return fmt.Errorf("error fetching credentials: %v", err)
 		}
@@ -331,7 +304,38 @@ func (i *Identity) InitVerifiableCredentials(offerData []byte) error {
 	return nil
 }
 
-func (i *Identity) DIDToIDHex(did string) (string, error) {
+func (i *Identity) IsFinalized(
+	rarimoCoreURL string,
+	issuerDid string,
+	creationTimestamp int64,
+) (bool, error) {
+	coreStateInfo, err := i.getStateInfo(rarimoCoreURL, issuerDid)
+	if err != nil {
+		return false, fmt.Errorf("error getting state info: %v", err)
+	}
+
+	coreOperation, err := i.getCoreOperation(rarimoCoreURL, coreStateInfo.LastUpdateOperationIdx)
+	if err != nil {
+		return false, fmt.Errorf("error getting core operation: %v", err)
+	}
+
+	timestamp, err := strconv.ParseInt(coreOperation.Timestamp, 10, 64)
+	if err != nil {
+		return false, fmt.Errorf("timestamp is not valid integer: %v", err)
+	}
+
+	if creationTimestamp > timestamp {
+		return false, nil
+	}
+
+	if coreOperation.Status != OperationFinalizedStatus {
+		return false, nil
+	}
+
+	return true, nil
+}
+
+func (i *Identity) didToIDHex(did string) (string, error) {
 	didParsed, err := w3c.ParseDID(did)
 	if err != nil {
 		return "", fmt.Errorf("error parsing did: %v", err)
@@ -345,58 +349,77 @@ func (i *Identity) DIDToIDHex(did string) (string, error) {
 	return fmt.Sprintf("0x0%s", id.BigInt().Text(16)), nil
 }
 
-func (i *Identity) PrepareQueryInputs(
+func (i *Identity) prepareQueryInputs(
 	coreStateHash string,
 	votingAddress string,
 	schemaJson []byte,
-) ([]byte, error) {
+) (*AtomicQueryMTPV2OnChainVotingCircuitInputs, *big.Int, error) {
 	accountAddress, err := i.getEthereumAccountAddress()
 	if err != nil {
-		return nil, fmt.Errorf("error getting ethereum account address: %v", err)
+		return nil, nil, fmt.Errorf("error getting ethereum account address: %v", err)
 	}
 
 	requestID, err := rand.Int(rand.Reader, constants.Q)
 	if err != nil {
-		return nil, fmt.Errorf("error generating request id: %v", err)
+		return nil, nil, fmt.Errorf("error generating request id: %v", err)
 	}
 
 	userId, err := i.GetID()
 	if err != nil {
-		return nil, fmt.Errorf("error getting user id: %v", err)
+		return nil, nil, fmt.Errorf("error getting user id: %v", err)
 	}
 
 	gistProofInfoRaw, err := i.stateProvider.GetGISTProof(i.GetDID())
 	if err != nil {
-		return nil, fmt.Errorf("error getting gist proof: %v", err)
+		return nil, nil, fmt.Errorf("error getting gist proof: %v", err)
 	}
 
 	gistProofInfo := new(GISTProofInfo)
 	if err := json.Unmarshal(gistProofInfoRaw, &gistProofInfo); err != nil {
-		return nil, fmt.Errorf("error unmarshaling gist proof: %v", err)
+		return nil, nil, fmt.Errorf("error unmarshaling gist proof: %v", err)
 	}
 
 	gistProof, err := gistProofInfo.GetProof()
 	if err != nil {
-		return nil, fmt.Errorf("error getting gist proof: %v", err)
+		return nil, nil, fmt.Errorf("error getting gist proof: %v", err)
 	}
 
 	globalNodeAux := i.getNodeAuxValue(gistProof.Proof)
 	nodeAuxAuth := i.getNodeAuxValue(i.authClaimNonRevProof)
 
 	if len(i.credentials) == 0 {
-		return nil, fmt.Errorf("no credentials found")
+		return nil, nil, fmt.Errorf("no credentials found")
 	}
 
 	credential := i.credentials[0]
 
 	validCredential, revStatus, coreClaim, err := i.getPreparedCredential(credential)
 	if err != nil {
-		return nil, fmt.Errorf("error getting prepared credential: %v", err)
+		return nil, nil, fmt.Errorf("error getting prepared credential: %v", err)
 	}
 
 	credentialHash, ok := validCredential.CredentialSubject["credentialHash"].(string)
 	if !ok {
-		return nil, errors.New("credential hash is not a string")
+		return nil, nil, errors.New("credential hash is not a string")
+	}
+
+	documentNullifier, ok := validCredential.CredentialSubject["documentNullifier"].(string)
+	if !ok {
+		return nil, nil, errors.New("documentNullifier is not a string")
+	}
+
+	documentNullifierBigInt, ok := new(big.Int).SetString(documentNullifier, 10)
+	if !ok {
+		return nil, nil, errors.New("error setting document nullifier")
+	}
+
+	isUserRegistered, err := i.stateProvider.IsUserRegistered(votingAddress, documentNullifierBigInt.Bytes())
+	if err != nil {
+		return nil, nil, errors.New("errors getting is user registered")
+	}
+
+	if isUserRegistered {
+		return nil, nil, errors.New("user already registered")
 	}
 
 	createProofRequest := &CreateProofRequest{
@@ -414,7 +437,7 @@ func (i *Identity) PrepareQueryInputs(
 
 	circuitClaimData, err := i.newCircuitClaimData(validCredential, coreClaim, coreStateHash)
 	if err != nil {
-		return nil, fmt.Errorf("error creating circuit claim: %v", err)
+		return nil, nil, fmt.Errorf("error creating circuit claim: %v", err)
 	}
 
 	query, err := i.toCircuitsQuery(
@@ -424,12 +447,12 @@ func (i *Identity) PrepareQueryInputs(
 		schemaJson,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("error creating circuits query: %v", err)
+		return nil, nil, fmt.Errorf("error creating circuits query: %v", err)
 	}
 
 	revState, err := revStatus.Issuer.GetIssuerPreparedState()
 	if err != nil {
-		return nil, fmt.Errorf("error getting issuer prepared state: %v", err)
+		return nil, nil, fmt.Errorf("error getting issuer prepared state: %v", err)
 	}
 
 	nonRevProof := &MTP{
@@ -451,7 +474,7 @@ func (i *Identity) PrepareQueryInputs(
 
 	challengeBytes, err := hex.DecodeString(createProofRequest.AccountAddress[2:])
 	if err != nil {
-		return nil, fmt.Errorf("error decoding challenge: %v", err)
+		return nil, nil, fmt.Errorf("error decoding challenge: %v", err)
 	}
 
 	challenge := fromLittleEndian(challengeBytes)
@@ -460,10 +483,10 @@ func (i *Identity) PrepareQueryInputs(
 
 	issuerTreeState, err := circuitClaimData.Status.Issuer.GetIssuerPreparedState()
 	if err != nil {
-		return nil, fmt.Errorf("error getting issuer prepared state: %v", err)
+		return nil, nil, fmt.Errorf("error getting issuer prepared state: %v", err)
 	}
 
-	inputs := &AtomicQueryMTPV2OnChainVotingCircuitInputs{
+	return &AtomicQueryMTPV2OnChainVotingCircuitInputs{
 		RequestID: requestID.String(),
 
 		UserGenesisID:            userId,
@@ -530,23 +553,395 @@ func (i *Identity) PrepareQueryInputs(
 
 		VotingAddress: votingAddress,
 		Commitment:    i.commitment.String(),
+	}, documentNullifierBigInt, nil
+}
+
+func (i *Identity) GetCommitment() []byte {
+	return i.commitment.Bytes()
+}
+
+func (i *Identity) getStateProof(operationProof OperationProof) ([]byte, error) {
+	var operationProofPathData [][32]byte
+	for _, path := range operationProof.Path {
+		pathData, err := hex.DecodeString(path[2:])
+		if err != nil {
+			return nil, fmt.Errorf("error decoding path: %v", err)
+		}
+
+		var newProofData [32]byte
+		copy(newProofData[:], pathData[:32])
+
+		operationProofPathData = append(operationProofPathData, newProofData)
 	}
 
-	data, err := json.Marshal(inputs)
+	signature, err := hex.DecodeString(operationProof.Signature[2:])
 	if err != nil {
-		return nil, fmt.Errorf("error marshaling query inputs: %v", err)
+		return nil, fmt.Errorf("error decoding signature: %v", err)
 	}
 
-	return data, nil
+	if len(signature) >= 65 {
+		signature[64] += 27
+	}
+
+	bytes32ArrT, _ := abi.NewType("bytes32[]", "", nil)
+	bytes32T, _ := abi.NewType("bytes", "", nil)
+
+	arguments := abi.Arguments{
+		{
+			Type: bytes32ArrT,
+		},
+		{
+			Type: bytes32T,
+		},
+	}
+
+	proof, err := arguments.Pack(operationProofPathData, signature)
+	if err != nil {
+		return nil, fmt.Errorf("error packing proof: %v", err)
+	}
+
+	return proof, nil
 }
 
 func (i *Identity) getEthereumAccountAddress() (string, error) {
-	privateKey, err := crypto.ToECDSA(i.secretKey.Scalar().BigInt().Bytes())
+	pubkey := i.secretKey.Public().Compress()
+
+	var buf []byte
+	hasher := sha3.NewLegacyKeccak256()
+	hasher.Write((pubkey)[:])
+
+	address := hasher.Sum(buf)[12:]
+
+	return "0x" + hex.EncodeToString(address), nil
+}
+
+func (i *Identity) Register(
+	rarimoCoreURL string,
+	issuerDid string,
+	votingAddress string,
+	schemaJsonLd []byte,
+	issuingAuthorityCode string,
+) ([]byte, error) {
+	coreStateInfo, err := i.getStateInfo(rarimoCoreURL, issuerDid)
 	if err != nil {
-		return "", fmt.Errorf("error converting secret key to ecdsa: %v", err)
+		return nil, fmt.Errorf("error getting state info: %v", err)
 	}
 
-	return crypto.PubkeyToAddress(privateKey.PublicKey).Hex(), nil
+	issuerState, err := i.GetIssuerState()
+	if err != nil {
+		return nil, fmt.Errorf("error getting issuer state: %v", err)
+	}
+
+	coreMTP, err := i.getCoreMTP(rarimoCoreURL, issuerDid, coreStateInfo.CreatedAtBlock)
+	if err != nil {
+		return nil, fmt.Errorf("error getting core mtp: %v", err)
+	}
+
+	coreOperation, err := i.getCoreOperation(rarimoCoreURL, coreStateInfo.LastUpdateOperationIdx)
+	if err != nil {
+		return nil, fmt.Errorf("error getting core operation: %v", err)
+	}
+
+	coreOperationProof, err := i.getCoreOperationProof(rarimoCoreURL, coreStateInfo.LastUpdateOperationIdx)
+	if err != nil {
+		return nil, fmt.Errorf("error getting core operation proof: %v", err)
+	}
+
+	votingQueryInputs, documentNullifier, err := i.prepareQueryInputs(coreStateInfo.Hash, votingAddress, schemaJsonLd)
+	if err != nil {
+		return nil, fmt.Errorf("error preparing query inputs: %v", err)
+	}
+
+	votingQueryInputsJson, err := json.Marshal(votingQueryInputs)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling voting query inputs: %v", err)
+	}
+
+	proofBytes, err := i.stateProvider.ProveCredentialAtomicQueryMTPV2OnChainVoting(votingQueryInputsJson)
+	if err != nil {
+		return nil, fmt.Errorf("error proving credential atomic query mtp v2 on chain voting: %v", err)
+	}
+
+	proof := new(types.ZKProof)
+	if err := json.Unmarshal(proofBytes, &proof); err != nil {
+		return nil, fmt.Errorf("error unmarshaling proof: %v", err)
+	}
+
+	proveIdentityParams, err := i.buildProveIdentityParams(
+		issuerDid,
+		issuerState,
+		coreStateInfo.CreatedAtTimestamp,
+		coreMTP.Proof,
+		proof,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error building prove identity params: %v", err)
+	}
+
+	transitStateParams, err := i.buildTransitStateParams(
+		coreOperationProof,
+		coreOperation,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error building transit state params: %v", err)
+	}
+
+	registerProofParams, err := i.buildRegisterProofParams(
+		issuingAuthorityCode,
+		documentNullifier,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error building register proof params: %v", err)
+	}
+
+	coder, err := NewRegistrationCoder()
+	if err != nil {
+		return nil, fmt.Errorf("error creating registration coder: %v", err)
+	}
+
+	calldata, err := coder.Pack("register", proveIdentityParams, registerProofParams, transitStateParams, true)
+	if err != nil {
+		return nil, fmt.Errorf("error packing calldata: %v", err)
+	}
+
+	return calldata, nil
+}
+
+func (i *Identity) buildRegisterProofParams(
+	issuingAuthorityCode string,
+	documentNullifier *big.Int,
+) (*IRegisterVerifierRegisterProofParams, error) {
+	issuingAuthorityCodeBigInt, ok := new(big.Int).SetString(issuingAuthorityCode, 10)
+	if !ok {
+		return nil, errors.New("error setting issuing authority code")
+	}
+
+	commitmentBytes := i.commitment.Bytes()
+
+	var commitmentBytes32 [32]byte
+	copy(commitmentBytes32[:], commitmentBytes[:32])
+
+	return &IRegisterVerifierRegisterProofParams{
+		IssuingAuthority:  issuingAuthorityCodeBigInt,
+		DocumentNullifier: documentNullifier,
+		Commitment:        commitmentBytes32,
+	}, nil
+}
+
+func (i *Identity) buildTransitStateParams(
+	coreOperationProof *OperationProof,
+	coreOperation *Operation,
+) (*IBaseVerifierTransitStateParams, error) {
+	gistRootBigInt, ok := new(big.Int).SetString(coreOperation.Details.GISTHash[2:], 16)
+	if !ok {
+		return nil, errors.New("error setting gist root")
+	}
+
+	gistRootCreatedAtTimestampBigInt, ok := new(big.Int).SetString(coreOperation.Details.Timestamp, 10)
+	if !ok {
+		return nil, errors.New("error setting gist root created at timestamp")
+	}
+
+	coreStateProof, err := i.getStateProof(*coreOperationProof)
+	if err != nil {
+		return nil, fmt.Errorf("error getting core state proof: %v", err)
+	}
+
+	newIdentitiesStatesRootBytes, err := hex.DecodeString(coreOperation.Details.StateRootHash[2:])
+	if err != nil {
+		return nil, fmt.Errorf("error getting new identities states root: %v", err)
+	}
+
+	var newIdentitiesStatesRoot [32]byte
+	copy(newIdentitiesStatesRoot[:], newIdentitiesStatesRootBytes[:32])
+
+	return &IBaseVerifierTransitStateParams{
+		NewIdentitiesStatesRoot: newIdentitiesStatesRoot,
+		GistData: ILightweightStateGistRootData{
+			Root:               gistRootBigInt,
+			CreatedAtTimestamp: gistRootCreatedAtTimestampBigInt,
+		},
+		Proof: coreStateProof,
+	}, nil
+}
+
+func (i *Identity) buildProveIdentityParams(
+	issuerDid string,
+	issuerState string,
+	createdAtTimestamp string,
+	merkleProof []string,
+	zkProof *types.ZKProof,
+) (*IBaseVerifierProveIdentityParams, error) {
+	issuerId, err := i.DidToId(issuerDid)
+	if err != nil {
+		return nil, fmt.Errorf("error converting issuer did to id: %v", err)
+	}
+
+	issuerIdBigInt, ok := new(big.Int).SetString(issuerId, 10)
+	if !ok {
+		return nil, errors.New("error setting issuer id")
+	}
+
+	issuerStateBigEndian := hexEndianSwap(issuerState)
+
+	issuerStateBigInt, ok := new(big.Int).SetString(issuerStateBigEndian, 16)
+	if !ok {
+		return nil, errors.New("error setting issuer state")
+	}
+
+	createdAtTimestampBigInt, ok := new(big.Int).SetString(createdAtTimestamp, 10)
+	if !ok {
+		return nil, errors.New("error setting created at timestamp")
+	}
+
+	var merkleProofBigInt [][32]byte
+	for _, proof := range merkleProof {
+		proofBytes, err := hex.DecodeString(proof[2:])
+		if err != nil {
+			return nil, fmt.Errorf("error decoding merkle proof: %v", err)
+		}
+
+		var newProofData [32]byte
+		copy(newProofData[:], proofBytes[:32])
+
+		merkleProofBigInt = append(merkleProofBigInt, newProofData)
+	}
+
+	var inputs []*big.Int
+	for _, input := range zkProof.PubSignals {
+		inputBigInt, ok := new(big.Int).SetString(input, 10)
+		if !ok {
+			return nil, fmt.Errorf("error setting input: %v", err)
+		}
+
+		inputs = append(inputs, inputBigInt)
+	}
+
+	var a [2]*big.Int
+	for index, val := range zkProof.Proof.A[:2] {
+		a_i, ok := new(big.Int).SetString(val, 10)
+		if !ok {
+			return nil, fmt.Errorf("error setting a[%d]: %v", index, err)
+		}
+
+		a[index] = a_i
+	}
+
+	var b [2][2]*big.Int
+	for index, val := range zkProof.Proof.B[:2] {
+		for index2, val2 := range val[:2] {
+			b_i, ok := new(big.Int).SetString(val2, 10)
+			if !ok {
+				return nil, fmt.Errorf("error setting b[%d][%d]: %v", index, index2, err)
+			}
+
+			b[index][index2] = b_i
+		}
+	}
+
+	b[0][0], b[0][1] = b[0][1], b[0][0]
+	b[1][0], b[1][1] = b[1][1], b[1][0]
+
+	var c [2]*big.Int
+	for index, val := range zkProof.Proof.C[:2] {
+		c_i, ok := new(big.Int).SetString(val, 10)
+		if !ok {
+			return nil, fmt.Errorf("error setting c[%d]: %v", index, err)
+		}
+
+		c[index] = c_i
+	}
+
+	return &IBaseVerifierProveIdentityParams{
+		StatesMerkleData: ILightweightStateStatesMerkleData{
+			IssuerId:           issuerIdBigInt,
+			IssuerState:        issuerStateBigInt,
+			CreatedAtTimestamp: createdAtTimestampBigInt,
+			MerkleProof:        merkleProofBigInt,
+		},
+		Inputs: inputs,
+		A:      a,
+		B:      b,
+		C:      c,
+	}, nil
+}
+
+func (i *Identity) getCoreOperationProof(rarimoCoreURL string, index string) (*OperationProof, error) {
+	rarimoCoreURL += fmt.Sprintf("/rarimo/rarimo-core/rarimocore/operation/%v/proof", index)
+
+	operationProofBytes, err := i.stateProvider.Fetch(rarimoCoreURL, "GET", nil, "", "")
+	if err != nil {
+		return nil, fmt.Errorf("error fetching operation proof: %v", err)
+	}
+
+	operationProof := new(OperationProof)
+	if err := json.Unmarshal(operationProofBytes, &operationProof); err != nil {
+		return nil, fmt.Errorf("error unmarshaling operation proof: %v", err)
+	}
+
+	if operationProof.Signature == "" {
+		return nil, errors.New("operation proof signature is empty")
+	}
+
+	return operationProof, nil
+}
+
+func (i *Identity) getCoreOperation(rarimoCoreURL string, index string) (*Operation, error) {
+	rarimoCoreURL += fmt.Sprintf("/rarimo/rarimo-core/rarimocore/operation/%v", index)
+
+	operationBytes, err := i.stateProvider.Fetch(rarimoCoreURL, "GET", nil, "", "")
+	if err != nil {
+		return nil, fmt.Errorf("error fetching operation: %v", err)
+	}
+
+	operation := new(OperationData)
+	if err := json.Unmarshal(operationBytes, &operation); err != nil {
+		return nil, fmt.Errorf("error unmarshaling operation: %v", err)
+	}
+
+	return &operation.Operation, nil
+}
+
+func (i *Identity) getCoreMTP(rarimoCoreURL string, issuerDid string, createdAtBlock string) (*CoreMTP, error) {
+	issuerIdHex, err := i.didToIDHex(issuerDid)
+	if err != nil {
+		return nil, fmt.Errorf("error converting issuer did to id hex: %v", err)
+	}
+
+	rarimoCoreURL += fmt.Sprintf("/rarimo/rarimo-core/identity/state/%v/proof", issuerIdHex)
+
+	coreMTPBytes, err := i.stateProvider.Fetch(rarimoCoreURL, "GET", nil, "X-Cosmos-Block-Height", createdAtBlock)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching core mtp: %v", err)
+	}
+
+	coreMTP := new(CoreMTP)
+	if err := json.Unmarshal(coreMTPBytes, &coreMTP); err != nil {
+		return nil, fmt.Errorf("error unmarshaling core mtp: %v", err)
+	}
+
+	return coreMTP, nil
+}
+
+func (i *Identity) getStateInfo(rarimoCoreURL string, issuerDid string) (*StateInfo, error) {
+	issuerIdHex, err := i.didToIDHex(issuerDid)
+	if err != nil {
+		return nil, fmt.Errorf("error converting issuer did to id hex: %v", err)
+	}
+
+	rarimoCoreURL += fmt.Sprintf("/rarimo/rarimo-core/identity/state/%s", issuerIdHex)
+
+	getStateInfoResponseBytes, err := i.stateProvider.Fetch(rarimoCoreURL, "GET", nil, "", "")
+	if err != nil {
+		return nil, fmt.Errorf("error fetching state info: %v", err)
+	}
+
+	getStateInfoResponse := new(GetStateInfoResponse)
+	if err := json.Unmarshal(getStateInfoResponseBytes, &getStateInfoResponse); err != nil {
+		return nil, fmt.Errorf("error unmarshaling state info: %v", err)
+	}
+
+	return &getStateInfoResponse.State, nil
 }
 
 func (i *Identity) PrepareAuth2Inputs(hash []byte, circuitID circuits.CircuitID) ([]byte, error) {
@@ -664,7 +1059,7 @@ func (i *Identity) GetSecretIntStr() string {
 }
 
 func (i *Identity) getRevocationStatus(status *CredentialStatus) (*ProofStatus, error) {
-	response, err := i.stateProvider.Fetch(status.Identifier, "GET", "")
+	response, err := i.stateProvider.Fetch(status.Identifier, "GET", nil, "", "")
 	if err != nil {
 		return nil, fmt.Errorf("error fetching revocation status: %v", err)
 	}
@@ -773,10 +1168,10 @@ func (i *Identity) getPreparedCredential(
 
 func (i *Identity) getMTPDataByUrl(url string, endianSwappedCoreStateHash *string) (*ProofStatus, error) {
 	if endianSwappedCoreStateHash != nil {
-		url = fmt.Sprintf("%s?state=%s", url, *endianSwappedCoreStateHash)
+		url = fmt.Sprintf("%s?state_hash=%s", url, *endianSwappedCoreStateHash)
 	}
 
-	response, err := i.stateProvider.Fetch(url, "GET", "")
+	response, err := i.stateProvider.Fetch(url, "GET", nil, "", "")
 	if err != nil {
 		return nil, fmt.Errorf("error fetching mtp data: %v", err)
 	}
@@ -870,7 +1265,7 @@ func (i *Identity) newCircuitClaimData(
 		return nil, fmt.Errorf("error getting iden3 sparse merkle tree proof: %v", err)
 	}
 
-	swappedCoreStateHash := convertEndianSwappedCoreStateHashHex(coreStateHash)
+	swappedCoreStateHash := hexEndianSwap(coreStateHash)
 
 	if smtProof != nil {
 		mtp, err := i.getMTPDataByUrl(smtProof.ID, &swappedCoreStateHash)
@@ -996,53 +1391,6 @@ func (i *Identity) prepareMerklizedQuery(
 	parsedQuery.Query.SlotIndex = 0
 
 	return &parsedQuery.Query, nil
-}
-
-func (i *Identity) NewIdentitiesStatesRoot(issuerId string, issuerState string, createdAtTimestamp string) (string, error) {
-	issuerID, ok := new(big.Int).SetString(issuerId, 10)
-	if !ok {
-		return "", fmt.Errorf("error setting issuer id")
-	}
-
-	issuerStateBigInt, ok := new(big.Int).SetString(issuerState, 10)
-	if !ok {
-		return "", fmt.Errorf("error setting issuer state")
-	}
-
-	createdAtTimestampBigInt, ok := new(big.Int).SetString(createdAtTimestamp, 10)
-	if !ok {
-		return "", fmt.Errorf("error setting created at timestamp")
-	}
-
-	uint256T, err := abi.NewType("uint256", "", nil)
-	if err != nil {
-		return "", fmt.Errorf("error creating new type: %v", err)
-	}
-
-	arguments := abi.Arguments{
-		{
-			Type: uint256T,
-		},
-		{
-			Type: uint256T,
-		},
-		{
-			Type: uint256T,
-		},
-	}
-
-	bytes, err := arguments.Pack(issuerID, issuerStateBigInt, createdAtTimestampBigInt)
-	if err != nil {
-		return "", fmt.Errorf("error packing arguments: %v", err)
-	}
-
-	var buf []byte
-	hash := sha3.NewLegacyKeccak256()
-	hash.Write(bytes)
-
-	buf = hash.Sum(buf)
-
-	return hex.EncodeToString(buf), nil
 }
 
 func parseRequest(req *ProofQueryCredentialSubject) (*QueryWithFieldName, error) {

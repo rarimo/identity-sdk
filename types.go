@@ -131,8 +131,10 @@ type GISTProof struct {
 type StateProvider interface {
 	GetGISTProof(userId string) ([]byte, error)
 	ProveAuthV2(inputs []byte) ([]byte, error)
-	Fetch(url string, method string, body string) ([]byte, error)
+	Fetch(url string, method string, body []byte, headerKey string, headerValue string) ([]byte, error)
 	LocalPrinter(msg string)
+	ProveCredentialAtomicQueryMTPV2OnChainVoting(inputs []byte) ([]byte, error)
+	IsUserRegistered(contract string, documentNullifier []byte) (bool, error)
 }
 
 type CredentialStatus struct {
@@ -505,4 +507,47 @@ type JSONSchema struct {
 	Metadata SchemaMetadata `json:"$metadata"`
 	Schema   string         `json:"$schema"`
 	Type     string         `json:"type"`
+}
+
+type OperationProof struct {
+	Path      []string `json:"path"`
+	Signature string   `json:"signature"`
+}
+
+type StateInfo struct {
+	Index                  string `json:"index"`
+	Hash                   string `json:"hash"`
+	CreatedAtTimestamp     string `json:"createdAtTimestamp"`
+	CreatedAtBlock         string `json:"createdAtBlock"`
+	LastUpdateOperationIdx string `json:"lastUpdateOperationIndex"`
+}
+
+type GetStateInfoResponse struct {
+	State StateInfo `json:"state"`
+}
+
+type CoreMTP struct {
+	Proof []string `json:"proof"`
+}
+
+type OperationData struct {
+	Operation Operation `json:"operation"`
+}
+
+type Operation struct {
+	Index         string           `json:"index"`
+	OperationType string           `json:"operationType"`
+	Details       OperationDetails `json:"details"`
+	Status        string           `json:"status"`
+	Creator       string           `json:"creator"`
+	Timestamp     string           `json:"timestamp"`
+}
+
+type OperationDetails struct {
+	Type          string `json:"@type"`
+	Contract      string `json:"contract"`
+	Chain         string `json:"chain"`
+	GISTHash      string `json:"GISTHash"`
+	StateRootHash string `json:"stateRootHash"`
+	Timestamp     string `json:"timestamp"`
 }

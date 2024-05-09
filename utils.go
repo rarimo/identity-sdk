@@ -4,9 +4,13 @@ import (
 	"encoding/hex"
 )
 
-func convertEndianSwappedCoreStateHashHex(hash string) string {
+func hexEndianSwap(hash string) string {
+	if hash[:2] == "0x" {
+		hash = hash[2:]
+	}
+
 	// Remove the "0x" prefix and decode the hex string
-	decodedHash, err := hex.DecodeString(hash[2:])
+	decodedHash, err := hex.DecodeString(hash)
 	if err != nil {
 		return ""
 	}
@@ -19,9 +23,10 @@ func convertEndianSwappedCoreStateHashHex(hash string) string {
 
 	// Add "0x" prefix if necessary
 	if len(convertedStateHash) < 64 {
-		return "0x0" + convertedStateHash
+		return "0" + convertedStateHash
 	}
-	return "0x" + convertedStateHash
+
+	return convertedStateHash
 }
 
 func reverseBytes(data []byte) {
