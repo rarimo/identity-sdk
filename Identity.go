@@ -30,6 +30,11 @@ import (
 
 var OperationFinalizedStatus = "SIGNED"
 
+type FinalizedResponse struct {
+	IsFinalized bool   `json:"isFinalized"`
+	StateHash   string `json:"stateHash"`
+}
+
 type TreeState struct {
 	State           *merkletree.Hash
 	ClaimsRoot      *merkletree.Hash

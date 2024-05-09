@@ -21,12 +21,13 @@ func hexEndianSwap(hash string) string {
 	// Convert the reversed byte array back to a hex string
 	convertedStateHash := hex.EncodeToString(decodedHash)
 
-	// Add "0x" prefix if necessary
-	if len(convertedStateHash) < 64 {
-		return "0" + convertedStateHash
+	zeroesToAddNumber := 64 - len(convertedStateHash)
+	var zeroesToAdd string
+	for i := 0; i < zeroesToAddNumber; i++ {
+		zeroesToAdd += "0"
 	}
 
-	return convertedStateHash
+	return convertedStateHash + zeroesToAdd
 }
 
 func reverseBytes(data []byte) {
