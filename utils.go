@@ -2,6 +2,10 @@ package identity
 
 import (
 	"encoding/hex"
+	"fmt"
+
+	core "github.com/iden3/go-iden3-core/v2"
+	"github.com/iden3/go-iden3-core/v2/w3c"
 )
 
 func hexEndianSwap(hash string) string {
@@ -34,4 +38,20 @@ func reverseBytes(data []byte) {
 	for i, j := 0, len(data)-1; i < j; i, j = i+1, j-1 {
 		data[i], data[j] = data[j], data[i]
 	}
+}
+
+type DidHelper struct{}
+
+func (*DidHelper) DidToIDHex(did string) (string, error) {
+	didParsed, err := w3c.ParseDID(did)
+	if err != nil {
+		return "", fmt.Errorf("error parsing did: %v", err)
+	}
+
+	id, err := core.IDFromDID(*didParsed)
+	if err != nil {
+		return "", fmt.Errorf("error getting id from did: %v", err)
+	}
+
+	return fmt.Sprintf("0x0%s", id.BigInt().Text(16)), nil
 }
