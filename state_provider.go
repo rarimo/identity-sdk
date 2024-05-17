@@ -7,17 +7,27 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/iden3/go-rapidsnark/witness/v2"
 	"github.com/rarimo/passport-identity-provider/resources"
 	"gitlab.com/distributed_lab/logan/v3"
 	"gitlab.com/distributed_lab/logan/v3/errors"
 )
 
 type stateProvider struct {
-	identityProviderURL url.URL
+	identityProviderURL *url.URL
 }
 
-func NewStateProvider() StateProvider {
-	return &stateProvider{}
+func NewStateProvider(identityProviderURL string) (StateProvider, error) {
+	parsedIdentityProviderURL, err := url.Parse(identityProviderURL)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to parse identity provider URL", logan.F{
+			"url": identityProviderURL,
+		})
+	}
+
+	return &stateProvider{
+		identityProviderURL: parsedIdentityProviderURL,
+	}, nil
 }
 
 func (s stateProvider) GetGISTProof(userId string, blockNumber string) ([]byte, error) {
@@ -92,8 +102,37 @@ func (s stateProvider) LocalPrinter(msg string) {
 }
 
 func (s stateProvider) ProveCredentialAtomicQueryMTPV2OnChainVoting(inputs []byte) ([]byte, error) {
-	//TODO implement me
-	panic("implement me")
+	const (
+		wasmFilePath            = "assets/voting/voting.wasm"
+		zkeyFilePath            = "assets/voting/voting.zkey"
+		verificationKeyFilePath = "assets/voting/voting.json"
+	)
+
+	if len(inputs) == 0 {
+		return nil, errors.New("input bytes are empty")
+	}
+
+	parsedInputs, err := witness.ParseInputs(inputs)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to parse inputs")
+	}
+
+	votingProver, err := NewProver(wasmFilePath, zkeyFilePath, verificationKeyFilePath)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create voting prover")
+	}
+
+	proof, err := votingProver.GenerateZKProof(parsedInputs)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to generate voting proof")
+	}
+
+	rawProof, err := json.Marshal(proof)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to encode voting proof")
+	}
+
+	return rawProof, nil
 }
 
 func (s stateProvider) IsUserRegistered(contract string, documentNullifier []byte) (bool, error) {

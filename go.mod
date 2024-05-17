@@ -1,8 +1,6 @@
 module github.com/rarimovoting/identity
 
-go 1.22
-
-toolchain go1.22.2
+go 1.20
 
 require (
 	github.com/ethereum/go-ethereum v1.13.14
@@ -31,6 +29,9 @@ require (
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
+	github.com/iden3/go-rapidsnark/prover v0.0.10 // indirect
+	github.com/iden3/go-rapidsnark/witness v0.0.6 // indirect
+	github.com/iden3/wasmer-go v0.0.1 // indirect
 	github.com/mmcloughlin/addchain v0.4.0 // indirect
 	github.com/rarimo/passport-identity-provider v0.9.6 // indirect
 	github.com/shirou/gopsutil v3.21.4-0.20210419000835-c7a38de76ee5+incompatible // indirect
