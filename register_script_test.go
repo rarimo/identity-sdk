@@ -126,14 +126,17 @@ func fromEnv() envArgs {
 		return v
 	}
 
-	schema, err := os.ReadFile(mustEnv("SCHEMA_JSON_LD_FILE"))
+	schemaString := mustEnv("SCHEMA_JSON_LD")
+	stateString := mustEnv("STATE_INFO_JSON")
+
+	schema, err := hex.DecodeString(schemaString)
 	if err != nil {
-		panic(fmt.Sprintf("error reading SCHEMA_JSON_LD_FILE: %v", err))
+		panic(fmt.Sprintf("error decoding SCHEMA_JSON_LD value: %v", err))
 	}
 
-	state, err := os.ReadFile(mustEnv("STATE_INFO_JSON_FILE"))
+	state, err := hex.DecodeString(stateString)
 	if err != nil {
-		panic(fmt.Sprintf("error reading STATE_INFO_JSON_FILE: %v", err))
+		panic(fmt.Sprintf("error decoding STATE_INFO_JSON value: %v", err))
 	}
 
 	return envArgs{
