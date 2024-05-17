@@ -1098,7 +1098,7 @@ func (i *Identity) getRevocationStatus(status *CredentialStatus, endianSwappedCo
 		url = fmt.Sprintf("%s?state_hash=%s", url, *endianSwappedCoreStateHash)
 	}
 
-	response, err := i.stateProvider.Fetch(status.Identifier, "GET", nil, "", "")
+	response, err := i.stateProvider.Fetch(url, "GET", nil, "", "")
 	if err != nil {
 		return nil, fmt.Errorf("error fetching revocation status: %v", err)
 	}
