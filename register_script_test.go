@@ -128,12 +128,12 @@ func fromEnv() envArgs {
 
 	schema, err := os.ReadFile(mustEnv("SCHEMA_JSON_LD_FILE"))
 	if err != nil {
-		panic(fmt.Sprintf("error reading SCHEMA_JSON_LD: %v", err))
+		panic(fmt.Sprintf("error reading SCHEMA_JSON_LD_FILE: %v", err))
 	}
 
 	state, err := os.ReadFile(mustEnv("STATE_INFO_JSON_FILE"))
 	if err != nil {
-		panic(fmt.Sprintf("error reading STATE_INFO_JSON: %v", err))
+		panic(fmt.Sprintf("error reading STATE_INFO_JSON_FILE: %v", err))
 	}
 
 	return envArgs{
