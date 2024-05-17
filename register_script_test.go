@@ -126,15 +126,25 @@ func fromEnv() envArgs {
 		return v
 	}
 
+	schema, err := os.ReadFile(mustEnv("SCHEMA_JSON_LD_FILE"))
+	if err != nil {
+		panic(fmt.Sprintf("error reading SCHEMA_JSON_LD: %v", err))
+	}
+
+	state, err := os.ReadFile(mustEnv("STATE_INFO_JSON_FILE"))
+	if err != nil {
+		panic(fmt.Sprintf("error reading STATE_INFO_JSON: %v", err))
+	}
+
 	return envArgs{
 		relayerURL: mustEnv("RELAYER_URL"),
 		registerArgs: registerArgs{
 			rarimoCoreURL:        mustEnv("RARIMO_CORE_URL"),
 			issuerDid:            mustEnv("ISSUER_DID"),
-			votingAddress:        mustEnv("VOTING_ADDRESS"), // what is this?
-			schemaJsonLd:         []byte(mustEnv("SCHEMA_JSON_LD")),
+			votingAddress:        mustEnv("VOTING_ADDRESS"),
 			issuingAuthorityCode: mustEnv("ISSUING_AUTHORITY_CODE"),
-			stateInfoJSON:        []byte(mustEnv("STATE_INFO_JSON")),
+			schemaJsonLd:         schema,
+			stateInfoJSON:        state,
 		},
 	}
 }
@@ -150,8 +160,8 @@ type registerArgs struct {
 	rarimoCoreURL        string
 	issuerDid            string
 	votingAddress        string
-	schemaJsonLd         []byte
 	issuingAuthorityCode string
+	schemaJsonLd         []byte
 	stateInfoJSON        []byte
 }
 
