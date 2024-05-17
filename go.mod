@@ -1,6 +1,8 @@
 module github.com/rarimovoting/identity
 
-go 1.20
+go 1.22
+
+toolchain go1.22.2
 
 require (
 	github.com/ethereum/go-ethereum v1.13.14

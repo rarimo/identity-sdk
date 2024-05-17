@@ -54,10 +54,11 @@ func TestGenerateCrypto(t *testing.T) {
 }
 
 func TestCreateAndRegister(t *testing.T) {
-	// TODO impl
-	var provider identity.StateProvider
-
-	var env = fromEnv()
+	env := fromEnv()
+	provider, err := identity.NewStateProvider(env.identityProviderURL)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// generate in TestGenerateCrypto and paste here
 	testCases := []struct {
@@ -113,7 +114,8 @@ func TestCreateAndRegister(t *testing.T) {
 }
 
 type envArgs struct {
-	relayerURL string
+	relayerURL          string
+	identityProviderURL string
 	registerArgs
 }
 
@@ -140,7 +142,8 @@ func fromEnv() envArgs {
 	}
 
 	return envArgs{
-		relayerURL: mustEnv("RELAYER_URL"),
+		relayerURL:          mustEnv("RELAYER_URL"),
+		identityProviderURL: mustEnv("IDENTITY_PROVIDER_URL"),
 		registerArgs: registerArgs{
 			rarimoCoreURL:        mustEnv("RARIMO_CORE_URL"),
 			issuerDid:            mustEnv("ISSUER_DID"),

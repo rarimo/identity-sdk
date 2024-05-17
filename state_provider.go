@@ -63,8 +63,13 @@ func (s stateProvider) GetGISTProof(userId string, blockNumber string) ([]byte, 
 }
 
 func (s stateProvider) ProveAuthV2(inputs []byte) ([]byte, error) {
-	//TODO implement me
-	panic("implement me")
+	const (
+		wasmFilePath            = "assets/authV2/circuit.wasm"
+		zkeyFilePath            = "assets/authV2/circuit_final.zkey"
+		verificationKeyFilePath = "assets/authV2/authV2.json"
+	)
+
+	return s.generateProof(inputs, wasmFilePath, zkeyFilePath, verificationKeyFilePath)
 }
 
 func (s stateProvider) Fetch(url string, method string, body []byte, headerKey string, headerValue string) ([]byte, error) {
@@ -96,9 +101,8 @@ func (s stateProvider) Fetch(url string, method string, body []byte, headerKey s
 	return rawBody, nil
 }
 
-func (s stateProvider) LocalPrinter(msg string) {
-	//TODO implement me
-	panic("implement me")
+func (s stateProvider) LocalPrinter(_ string) {
+	panic("this is not used")
 }
 
 func (s stateProvider) ProveCredentialAtomicQueryMTPV2OnChainVoting(inputs []byte) ([]byte, error) {
@@ -108,6 +112,10 @@ func (s stateProvider) ProveCredentialAtomicQueryMTPV2OnChainVoting(inputs []byt
 		verificationKeyFilePath = "assets/voting/voting.json"
 	)
 
+	return s.generateProof(inputs, wasmFilePath, zkeyFilePath, verificationKeyFilePath)
+}
+
+func (s stateProvider) generateProof(inputs []byte, wasmFilePath, zkeyFilePath, verificationKeyFilePath string) ([]byte, error) {
 	if len(inputs) == 0 {
 		return nil, errors.New("input bytes are empty")
 	}
@@ -135,7 +143,6 @@ func (s stateProvider) ProveCredentialAtomicQueryMTPV2OnChainVoting(inputs []byt
 	return rawProof, nil
 }
 
-func (s stateProvider) IsUserRegistered(contract string, documentNullifier []byte) (bool, error) {
-	//TODO implement me
-	panic("implement me")
+func (s stateProvider) IsUserRegistered(_ string, _ []byte) (bool, error) {
+	return true, nil
 }
