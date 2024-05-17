@@ -25,6 +25,7 @@ import (
 	merkletree_db_memory "github.com/rarimo/go-merkletree/db/memory"
 	merklize "github.com/rarimo/go-schema-processor/merklize"
 	verifiable "github.com/rarimo/go-schema-processor/verifiable"
+	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/sha3"
 )
 
@@ -386,6 +387,8 @@ func (i *Identity) prepareQueryInputs(
 	schemaJson []byte,
 	blockNumber string,
 ) (*AtomicQueryMTPV2OnChainVotingCircuitInputs, *big.Int, error) {
+	log := i.Logger("prepareQueryInputs")
+
 	accountAddress, err := i.getEthereumAccountAddress()
 	if err != nil {
 		return nil, nil, fmt.Errorf("error getting ethereum account address: %v", err)
@@ -405,6 +408,7 @@ func (i *Identity) prepareQueryInputs(
 	if err != nil {
 		return nil, nil, fmt.Errorf("error getting gist proof: %v", err)
 	}
+	log.Infof("Got gist proof info: %s", hex.EncodeToString(gistProofInfoRaw))
 
 	gistProofInfo := new(GISTProofInfo)
 	if err := json.Unmarshal(gistProofInfoRaw, &gistProofInfo); err != nil {
@@ -454,6 +458,7 @@ func (i *Identity) prepareQueryInputs(
 	if isUserRegistered {
 		return nil, nil, errors.New("user already registered")
 	}
+	log.Infof("Confirmed user is not registered: address=%s", votingAddress)
 
 	createProofRequest := &CreateProofRequest{
 		AccountAddress: accountAddress,
@@ -656,6 +661,8 @@ func (i *Identity) Register(
 	issuingAuthorityCode string,
 	stateInfoJSON []byte,
 ) ([]byte, error) {
+	log := i.Logger("Register")
+
 	coreStateInfo := new(StateInfo)
 	if err := json.Unmarshal(stateInfoJSON, coreStateInfo); err != nil {
 		return nil, fmt.Errorf("error unmarshaling state info: %v", err)
@@ -665,26 +672,37 @@ func (i *Identity) Register(
 	if err != nil {
 		return nil, fmt.Errorf("error getting issuer state: %v", err)
 	}
+	log.Infof("Got issuer_state=%s by hash=%s", issuerState, coreStateInfo.Hash)
 
 	coreMTP, err := i.getCoreMTP(rarimoCoreURL, issuerDid, coreStateInfo.CreatedAtBlock)
 	if err != nil {
 		return nil, fmt.Errorf("error getting core mtp: %v", err)
 	}
+	log.Infof("Got core mtp proof: %v", coreMTP.Proof)
 
 	coreOperation, err := i.getCoreOperation(rarimoCoreURL, coreStateInfo.LastUpdateOperationIdx)
 	if err != nil {
 		return nil, fmt.Errorf("error getting core operation: %v", err)
 	}
+	log.Infof("Got operation: %+v", map[string]any{
+		"queired_index": coreStateInfo.LastUpdateOperationIdx,
+		"index":         coreOperation.Index,
+		"gist_hash":     coreOperation.Details.GISTHash,
+		"state_hash":    coreOperation.Details.StateRootHash,
+		"timestamp":     coreOperation.Details.Timestamp,
+	})
 
 	coreOperationProof, err := i.getCoreOperationProof(rarimoCoreURL, coreStateInfo.LastUpdateOperationIdx)
 	if err != nil {
 		return nil, fmt.Errorf("error getting core operation proof: %v", err)
 	}
+	log.Infof("Got operation proof: sig=%s, path=%v", coreOperationProof.Signature, coreOperationProof.Path)
 
 	votingQueryInputs, documentNullifier, err := i.prepareQueryInputs(coreStateInfo.Hash, votingAddress, schemaJsonLd, coreStateInfo.CreatedAtBlock)
 	if err != nil {
 		return nil, fmt.Errorf("error preparing query inputs: %v", err)
 	}
+	log.Infof("Got document nullifier: %s", documentNullifier)
 
 	votingQueryInputsJson, err := json.Marshal(votingQueryInputs)
 	if err != nil {
@@ -695,6 +713,7 @@ func (i *Identity) Register(
 	if err != nil {
 		return nil, fmt.Errorf("error proving credential atomic query mtp v2 on chain voting: %v", err)
 	}
+	log.Infof("Got proof from StateProvider.ProveCredentialAtomicQueryMTPV2OnChainVoting: %s", hex.EncodeToString(proofBytes))
 
 	proof := new(types.ZKProof)
 	if err := json.Unmarshal(proofBytes, &proof); err != nil {
@@ -733,11 +752,17 @@ func (i *Identity) Register(
 		return nil, fmt.Errorf("error creating registration coder: %v", err)
 	}
 
+	log.Warnf("Preparing calldata with transitState params: %+v", map[string]any{
+		"newIdentitiesStatesRoot": hex.EncodeToString(transitStateParams.NewIdentitiesStatesRoot[:]),
+		"gistRoot":                transitStateParams.GistData.Root.Text(16),
+		"gistTimestamp":           transitStateParams.GistData.CreatedAtTimestamp.String(),
+	})
 	calldata, err := coder.Pack("register", proveIdentityParams, registerProofParams, transitStateParams, true)
 	if err != nil {
 		return nil, fmt.Errorf("error packing calldata: %v", err)
 	}
 
+	log.Warnf("Registration calldata: %s", hex.EncodeToString(calldata))
 	return calldata, nil
 }
 
@@ -1471,4 +1496,12 @@ func fromLittleEndian(bytes []byte) *big.Int {
 	}
 
 	return result
+}
+
+func (i *Identity) Logger(m string) *logrus.Entry {
+	return logrus.New().WithFields(logrus.Fields{
+		"method":    m,
+		"did":       i.did.String(),
+		"nullifier": i.nullifier.String(),
+	})
 }
