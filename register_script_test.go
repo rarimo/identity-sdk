@@ -44,9 +44,9 @@ func TestGenerateCrypto(t *testing.T) {
 		fmt.Printf(`
 		{
 			identityArgs: identityArgs{
-				secretKeyHex: "0x%s",
-				secretHex:    "0x%s",
-				nullifierHex: "0x%s",
+				secretKeyHex: "%s",
+				secretHex:    "%s",
+				nullifierHex: "%s",
 			},
 		}%s
 `, hex.EncodeToString(key[:]), secret.Text(16), nullifier.Text(16), comma)
@@ -67,25 +67,25 @@ func TestCreateAndRegister(t *testing.T) {
 	}{
 		{
 			identityArgs: identityArgs{
-				secretKeyHex: "0xb34c4f6ef68d95d72b49c7bec5b8ecba55d2e0a82b81b55d8e6dd292107ea51d",
-				secretHex:    "0x264cc18cef255b00af5188b5ecd96c88e10fff05f27a3b116f4cdca9f02439",
-				nullifierHex: "0x94ce952a70c516d4415869e6ea76ddc9a87ca9de412dcc0d3ce5975ed14303",
+				secretKeyHex: "b34c4f6ef68d95d72b49c7bec5b8ecba55d2e0a82b81b55d8e6dd292107ea51d",
+				secretHex:    "264cc18cef255b00af5188b5ecd96c88e10fff05f27a3b116f4cdca9f02439",
+				nullifierHex: "94ce952a70c516d4415869e6ea76ddc9a87ca9de412dcc0d3ce5975ed14303",
 			},
 		},
 
 		{
 			identityArgs: identityArgs{
-				secretKeyHex: "0xf361688e574840b2d1b1bf4af15b548e048fccba581eec95b9b4bda6844a85c1",
-				secretHex:    "0x1efe93dce05281b56be7653ea585dc8cba94eec80286da4e7458542fc2d224",
-				nullifierHex: "0xf1ed6b705caf03e7cad9c488e5f3517c2b0a7c59426a440e467d5d707cb6f6",
+				secretKeyHex: "f361688e574840b2d1b1bf4af15b548e048fccba581eec95b9b4bda6844a85c1",
+				secretHex:    "1efe93dce05281b56be7653ea585dc8cba94eec80286da4e7458542fc2d224",
+				nullifierHex: "f1ed6b705caf03e7cad9c488e5f3517c2b0a7c59426a440e467d5d707cb6f6",
 			},
 		},
 
 		{
 			identityArgs: identityArgs{
-				secretKeyHex: "0xfc83355e0327740b200467e63bbda96b551a617be7d16c91ced7107fa53f9304",
-				secretHex:    "0xd76d8f806a8afee1fe85a9971b98814f045ca89cf2d0c1f7801cfb8ebe8016",
-				nullifierHex: "0x670add141d23ecb75e0644ef1d621300c7fa2178b756719c4320f9d85d71d7",
+				secretKeyHex: "fc83355e0327740b200467e63bbda96b551a617be7d16c91ced7107fa53f9304",
+				secretHex:    "d76d8f806a8afee1fe85a9971b98814f045ca89cf2d0c1f7801cfb8ebe8016",
+				nullifierHex: "670add141d23ecb75e0644ef1d621300c7fa2178b756719c4320f9d85d71d7",
 			},
 		},
 	}
