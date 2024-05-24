@@ -129,7 +129,7 @@ type GISTProof struct {
 }
 
 type StateProvider interface {
-	GetGISTProof(userId string) ([]byte, error)
+	GetGISTProof(userId string, blockNumber string) ([]byte, error)
 	ProveAuthV2(inputs []byte) ([]byte, error)
 	Fetch(url string, method string, body []byte, headerKey string, headerValue string) ([]byte, error)
 	LocalPrinter(msg string)
