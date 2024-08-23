@@ -315,17 +315,17 @@ func (i *Identity) IsFinalized(
 	issuerDid string,
 	creationTimestamp int64,
 	stateInfoJSON []byte,
-) ([]byte, error) {
+) (bool, *StateInfo, error) {
 	var stateInfo *StateInfo
 	if len(stateInfoJSON) != 0 {
 		stateInfo = new(StateInfo)
 		if err := json.Unmarshal(stateInfoJSON, stateInfo); err != nil {
-			return nil, fmt.Errorf("error unmarshaling state info: %v", err)
+			return false, nil, fmt.Errorf("error unmarshaling state info: %v", err)
 		}
 	} else {
 		coreStateInfo, err := i.getStateInfo(rarimoCoreURL, issuerDid)
 		if err != nil {
-			return nil, fmt.Errorf("error getting state info: %v", err)
+			return false, nil, fmt.Errorf("error getting state info: %v", err)
 		}
 
 		stateInfo = coreStateInfo
@@ -333,30 +333,32 @@ func (i *Identity) IsFinalized(
 
 	coreOperation, err := i.getCoreOperation(rarimoCoreURL, stateInfo.LastUpdateOperationIdx)
 	if err != nil {
-		return nil, fmt.Errorf("error getting core operation: %v", err)
+		return false, nil, fmt.Errorf("error getting core operation: %v", err)
 	}
 
 	timestamp, err := strconv.ParseInt(coreOperation.Timestamp, 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("timestamp is not valid integer: %v", err)
+		return false, nil, fmt.Errorf("timestamp is not valid integer: %v", err)
 	}
 
 	if creationTimestamp > timestamp {
+		fmt.Printf("creation timestamp (%d) > core operation timestamp(%d) ... waiting\n", creationTimestamp, timestamp)
 		response := &FinalizedResponse{
 			IsFinalized: false,
 			StateInfo:   &StateInfo{},
 		}
 
-		return json.Marshal(response)
+		return response.IsFinalized, response.StateInfo, nil
 	}
 
 	if coreOperation.Status != OperationFinalizedStatus {
+		fmt.Printf("status (%s) != finilized (%s) ... waiting\n", coreOperation.Status, OperationFinalizedStatus)
 		response := &FinalizedResponse{
 			IsFinalized: false,
 			StateInfo:   stateInfo,
 		}
 
-		return json.Marshal(response)
+		return response.IsFinalized, response.StateInfo, nil
 	}
 
 	response := &FinalizedResponse{
@@ -364,7 +366,7 @@ func (i *Identity) IsFinalized(
 		StateInfo:   stateInfo,
 	}
 
-	return json.Marshal(response)
+	return response.IsFinalized, response.StateInfo, nil
 }
 
 func (i *Identity) didToIDHex(did string) (string, error) {
@@ -430,7 +432,7 @@ func (i *Identity) prepareQueryInputs(
 	credential := i.credentials[0]
 
 	swappedCoreStateHash := hexEndianSwap(coreStateHash)
-	validCredential, revStatus, coreClaim, err := i.getPreparedCredential(credential, &swappedCoreStateHash)
+	validCredential, _, coreClaim, err := i.getPreparedCredential(credential, &swappedCoreStateHash)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error getting prepared credential: %v", err)
 	}
@@ -488,19 +490,19 @@ func (i *Identity) prepareQueryInputs(
 		return nil, nil, fmt.Errorf("error creating circuits query: %v", err)
 	}
 
-	revState, err := revStatus.Issuer.GetIssuerPreparedState()
-	if err != nil {
-		return nil, nil, fmt.Errorf("error getting issuer prepared state: %v", err)
-	}
+	//revState, err := revStatus.Issuer.GetIssuerPreparedState()
+	//if err != nil {
+	//	return nil, nil, fmt.Errorf("error getting issuer prepared state: %v", err)
+	//}
 
-	nonRevProof := &MTP{
-		Proof:     revStatus.Mtp,
-		TreeState: revState,
-	}
+	//nonRevProof := &MTP{
+	//	Proof:     revStatus.Mtp,
+	//	TreeState: revState,
+	//}
 
 	timestamp := time.Now().Unix()
 
-	nodeAuxNonRev := i.getNodeAuxValue(nonRevProof.Proof)
+	//nodeAuxNonRev := i.getNodeAuxValue(nonRevProof.Proof)
 	nodAuxJSONLD := i.getNodeAuxValue(query.ValueProof.Mtp)
 
 	rawValue := prepareCircuitArrayValues(query.Values, 1)
@@ -524,6 +526,7 @@ func (i *Identity) prepareQueryInputs(
 		return nil, nil, fmt.Errorf("error getting issuer prepared state: %v", err)
 	}
 
+	fmt.Println("Voting", issuerTreeState.ClaimsRoot.BigInt())
 	return &AtomicQueryMTPV2OnChainVotingCircuitInputs{
 		RequestID: requestID.String(),
 
@@ -947,6 +950,7 @@ func (i *Identity) getCoreOperationProof(rarimoCoreURL string, index string) (*O
 
 func (i *Identity) getCoreOperation(rarimoCoreURL string, index string) (*Operation, error) {
 	rarimoCoreURL += fmt.Sprintf("/rarimo/rarimo-core/rarimocore/operation/%v", index)
+	fmt.Println(rarimoCoreURL)
 
 	operationBytes, err := i.stateProvider.Fetch(rarimoCoreURL, "GET", nil, "", "")
 	if err != nil {
@@ -1123,7 +1127,7 @@ func (i *Identity) getRevocationStatus(status *CredentialStatus, endianSwappedCo
 		url = fmt.Sprintf("%s?state_hash=%s", url, *endianSwappedCoreStateHash)
 	}
 
-	response, err := i.stateProvider.Fetch(status.Identifier, "GET", nil, "", "")
+	response, err := i.stateProvider.Fetch(url, "GET", nil, "", "")
 	if err != nil {
 		return nil, fmt.Errorf("error fetching revocation status: %v", err)
 	}

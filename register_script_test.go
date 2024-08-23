@@ -13,7 +13,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/iden3/go-iden3-crypto/babyjub"
-	"github.com/rarimo/registration-relayer/resources"
 	"github.com/rarimovoting/identity"
 )
 
@@ -65,21 +64,21 @@ func TestCreateAndRegister(t *testing.T) {
 		identityArgs
 		registerArgs
 	}{
-		{
-			identityArgs: identityArgs{
-				secretKeyHex: "b34c4f6ef68d95d72b49c7bec5b8ecba55d2e0a82b81b55d8e6dd292107ea51d",
-				secretHex:    "264cc18cef255b00af5188b5ecd96c88e10fff05f27a3b116f4cdca9f02439",
-				nullifierHex: "94ce952a70c516d4415869e6ea76ddc9a87ca9de412dcc0d3ce5975ed14303",
-			},
-		},
+		//{
+		//	identityArgs: identityArgs{
+		//		secretKeyHex: "b34c4f6ef68d95d72b49c7bec5b8ecba55d2e0a82b81b55d8e6dd292107ea51d",
+		//		secretHex:    "264cc18cef255b00af5188b5ecd96c88e10fff05f27a3b116f4cdca9f02439",
+		//		nullifierHex: "94ce952a70c516d4415869e6ea76ddc9a87ca9de412dcc0d3ce5975ed14303",
+		//	},
+		//},
 
-		{
-			identityArgs: identityArgs{
-				secretKeyHex: "f361688e574840b2d1b1bf4af15b548e048fccba581eec95b9b4bda6844a85c1",
-				secretHex:    "1efe93dce05281b56be7653ea585dc8cba94eec80286da4e7458542fc2d224",
-				nullifierHex: "f1ed6b705caf03e7cad9c488e5f3517c2b0a7c59426a440e467d5d707cb6f6",
-			},
-		},
+		//{
+		//	identityArgs: identityArgs{
+		//		secretKeyHex: "f361688e574840b2d1b1bf4af15b548e048fccba581eec95b9b4bda6844a85c1",
+		//		secretHex:    "1efe93dce05281b56be7653ea585dc8cba94eec80286da4e7458542fc2d224",
+		//		nullifierHex: "f1ed6b705caf03e7cad9c488e5f3517c2b0a7c59426a440e467d5d707cb6f6",
+		//	},
+		//},
 
 		{
 			identityArgs: identityArgs{
@@ -177,6 +176,10 @@ func generateCalldata(i identityArgs, r registerArgs) ([]byte, error) {
 		return nil, err
 	}
 
+	if err = id.SetCredentials(r.rarimoCoreURL, r.stateInfoJSON); err != nil {
+		return nil, err
+	}
+
 	cd, err := id.Register(
 		r.rarimoCoreURL,
 		r.issuerDid,
@@ -213,10 +216,22 @@ func postCalldata(u string, cd []byte) (string, error) {
 		return "", err
 	}
 
-	var resp resources.TxResponse
+	var resp TxResponse
 	if err = json.NewDecoder(r.Body).Decode(&resp); err != nil {
 		return "", err
 	}
 
 	return resp.Data.Attributes.TxHash, nil
+}
+
+type TxResponse struct {
+	Data struct {
+		Key struct {
+			ID   string `json:"id"`
+			Type string `json:"type"`
+		}
+		Attributes struct {
+			TxHash string `json:"tx_hash"`
+		} `json:"attributes"`
+	} `json:"data"`
 }

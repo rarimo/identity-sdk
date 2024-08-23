@@ -1,6 +1,7 @@
 package identity
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/iden3/go-rapidsnark/prover"
@@ -56,6 +57,7 @@ func NewProver(wasmFilePath, zkeyFilePath, verificationKeyFilePath string) (Prov
 }
 
 func (p *zkprover) GenerateZKProof(inputs map[string]interface{}) (*types.ZKProof, error) {
+	fmt.Println("inputs", inputs)
 	binaryWitness, err := p.calculator.CalculateWTNSBin(inputs, false)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to calculate binary witness")

@@ -73,7 +73,7 @@ func (s stateProvider) ProveAuthV2(inputs []byte) ([]byte, error) {
 }
 
 func (s stateProvider) Fetch(url string, method string, body []byte, headerKey string, headerValue string) ([]byte, error) {
-	if len(body) == 0 || url == "" || method == "" || headerKey == "" || headerValue == "" {
+	if url == "" || method == "" {
 		return nil, errors.From(errors.New("Fetch: some input is empty"), logan.F{
 			"url": url, "method": method, "body": string(body), "headerKey": headerKey, "headerValue": headerValue,
 		})
@@ -84,7 +84,9 @@ func (s stateProvider) Fetch(url string, method string, body []byte, headerKey s
 		return nil, errors.Wrap(err, "failed to build request")
 	}
 
-	request.Header.Set(headerKey, headerValue)
+	if headerKey != "" {
+		request.Header.Set(headerKey, headerValue)
+	}
 
 	resp, err := http.DefaultClient.Do(request)
 	if err != nil {
@@ -93,12 +95,13 @@ func (s stateProvider) Fetch(url string, method string, body []byte, headerKey s
 
 	defer resp.Body.Close()
 
-	var rawBody []byte
-	if err = json.NewDecoder(resp.Body).Decode(&rawBody); err != nil {
-		return nil, errors.Wrap(err, "failed to parse body")
+	rawBody := new(bytes.Buffer)
+	_, err = rawBody.ReadFrom(resp.Body)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to read response body")
 	}
 
-	return rawBody, nil
+	return rawBody.Bytes(), nil
 }
 
 func (s stateProvider) LocalPrinter(_ string) {
@@ -144,5 +147,5 @@ func (s stateProvider) generateProof(inputs []byte, wasmFilePath, zkeyFilePath, 
 }
 
 func (s stateProvider) IsUserRegistered(_ string, _ []byte) (bool, error) {
-	return true, nil
+	return false, nil
 }

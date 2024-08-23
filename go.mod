@@ -1,8 +1,6 @@
 module github.com/rarimovoting/identity
 
-go 1.22
-
-toolchain go1.22.2
+go 1.20
 
 require (
 	github.com/ethereum/go-ethereum v1.13.14
@@ -16,7 +14,6 @@ require (
 	github.com/rarimo/go-merkletree v1.0.1
 	github.com/rarimo/go-schema-processor v1.0.2
 	github.com/rarimo/passport-identity-provider v0.9.6
-	github.com/rarimo/registration-relayer v0.1.2
 	github.com/sirupsen/logrus v1.9.3
 	gitlab.com/distributed_lab/logan v3.8.1+incompatible
 	golang.org/x/crypto v0.21.0
