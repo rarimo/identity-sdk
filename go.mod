@@ -1,4 +1,4 @@
-module github.com/rarimovoting/identity
+module github.com/rarimo/identity-sdk
 
 go 1.20
 
